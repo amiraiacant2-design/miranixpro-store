@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fa">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>تسویه حساب - Miranix Shop</title>
+<link rel="stylesheet" href="assets/style.css"></head>
+<body>
+  <div class="header"><div class="logo">Miranix Shop</div><a class="admin-link" href="admin.html">ورود مدیر</a></div>
+  <div class="container">
+    <h2>تسویه حساب</h2>
+    <div id="checkoutArea"></div>
+  </div>
+<script>
+const configUrl = 'config.json';
+function formatPrice(n){return new Intl.NumberFormat('fa-IR').format(n) + ' تومان';}
+function loadCart(){
+  const cart = JSON.parse(localStorage.getItem('miranix_cart')||'[]');
+  if(cart.length===0){ document.getElementById('checkoutArea').innerText='سبد خرید خالی است'; return; }
+  let total = cart.reduce((s,i)=>s + (i.price*i.qty),0);
+  let html = '<table><tr><th>محصول</th><th>قیمت</th></tr>';
+  cart.forEach(i=> html += `<tr><td>${i.title}</td><td>${formatPrice(i.price)}</td></tr>`);
+  html += `<tr><th>جمع</th><th>${formatPrice(total)}</th></tr></table>`;
+  html += '<div style="margin-top:12px"><input id="buyerName" placeholder="نام خریدار" /> <input id="buyerPhone" placeholder="شماره همراه" /></div>';
+  html += '<div style="margin-top:12px"><button id="payBtn" class="cta">پرداخت</button></div>';
+  document.getElementById('checkoutArea').innerHTML = html;
+  document.getElementById('payBtn').addEventListener('click', ()=>proceedPayment(total));
+}
+
+async function proceedPayment(amount){
+  // load config to find redirect template
+  const cfg = await fetch(configUrl).then(r=>r.json());
+  const orderId = 'ORD' + Date.now();
+  if(cfg.payment && cfg.payment.type === 'redirect'){
+    const url = cfg.payment.redirect_url_template.replace('{amount}', amount).replace('{order_id}', orderId);
+    // in real use: you may want to POST order details to your server and receive a payment token, then redirect
+    window.location.href = url;
+  } else {
+    alert('درگاه پرداخت تنظیم نشده. به پنل ادمین برو و payment.redirect_url_template را قرار بده.');
+  }
+}
+
+loadCart();
+</script>
+</body></html>

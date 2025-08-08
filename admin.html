@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="fa">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>پنل مدیریت - Miranix Shop</title>
+<link rel="stylesheet" href="assets/style.css"></head>
+<body>
+  <div class="header"><div class="logo">پنل مدیریت</div><a class="admin-link" href="index.html">بازگشت به فروشگاه</a></div>
+  <div class="container">
+    <h2>ورود مدیر</h2>
+    <div id="loginArea">
+      <input id="adminPass" placeholder="رمز عبور مدیر" />
+      <button id="loginBtn" class="cta">ورود</button>
+    </div>
+    <div id="adminArea" style="display:none">
+      <h3>پیکربندی فروشگاه</h3>
+      <div><label>نام فروشگاه: </label><input id="storeName" /></div>
+      <div style="margin-top:8px"><label>قالب آدرس پرداخت (redirect URL):</label><input id="redirectTemplate" /></div>
+      <div style="margin-top:8px"><small>مثال: https://yourpay.example/checkout?amount={amount}&order_id={order_id}</small></div>
+      <button id="saveConfig" class="cta" style="background:#2f8fef">ذخیره تنظیمات</button>
+      <h3 style="margin-top:18px">محصولات</h3>
+      <div id="productsList"></div>
+      <h4>افزودن/ویرایش محصول</h4>
+      <div class="form-row"><input id="pTitle" placeholder="عنوان" /><input id="pPrice" placeholder="قیمت (تومان)" /></div>
+      <div class="form-row"><input id="pSlug" placeholder="slug (latin_no_space)" /><input id="pStock" placeholder="موجودی" /></div>
+      <div class="form-row"><input id="pImage" placeholder="آدرس تصویر" /><input id="pShort" placeholder="توضیح کوتاه" /></div>
+      <button id="addProduct" class="cta">افزودن/بروزرسانی</button>
+      <h4 style="margin-top:16px">دیتابیس محلی</h4>
+      <button id="exportBtn" class="cta" style="background:#666">خروجی JSON محصولات</button>
+      <button id="importBtn" class="cta" style="background:#999">بارگذاری JSON (جایگزین)</button>
+      <input type="file" id="fileInput" style="display:none" />
+    </div>
+  </div>
+<script>
+const cfgUrl = 'config.json';
+let CONFIG = null;
+let PRODUCTS = [];
+
+async function loadInit(){
+  try{ CONFIG = await fetch(cfgUrl).then(r=>r.json()); } catch(e){ CONFIG = null; }
+  try{ PRODUCTS = await fetch('products.json?cachebust='+Date.now()).then(r=>r.json()); } catch(e){ PRODUCTS = JSON.parse(localStorage.getItem('miranix_products')||'[]'); }
+  // merge with localStorage override
+  const local = JSON.parse(localStorage.getItem('miranix_products')||'null');
+  if(local) PRODUCTS = local;
+}
+
+function renderProductsList(){
+  const out = document.getElementById('productsList');
+  if(PRODUCTS.length===0) out.innerHTML = '<div>هیچ محصولی نیست</div>';
+  else{
+    out.innerHTML = '<table><tr><th>عنوان</th><th>قیمت</th><th>موجودی</th><th>عملیات</th></tr>' + PRODUCTS.map(p=>`<tr><td>${p.title}</td><td>${p.price}</td><td>${p.stock}</td><td><button onclick="editProduct(${p.id})">ویرایش</button> <button onclick="delProduct(${p.id})">حذف</button></td></tr>`).join('') + '</table>';
+  }
+  document.getElementById('storeName').value = CONFIG?.store_name || '';
+  document.getElementById('redirectTemplate').value = CONFIG?.payment?.redirect_url_template || '';
+}
+
+function editProduct(id){
+  const p = PRODUCTS.find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('pTitle').value = p.title;
+  document.getElementById('pPrice').value = p.price;
+  document.getElementById('pSlug').value = p.slug;
+  document.getElementById('pStock').value = p.stock;
+  document.getElementById('pImage').value = p.image;
+  document.getElementById('pShort').value = p.short;
+  document.getElementById('addProduct').dataset.editId = id;
+}
+
+function delProduct(id){
+  if(!confirm('حذف شود؟')) return;
+  PRODUCTS = PRODUCTS.filter(x=>x.id!==id);
+  saveLocalProducts();
+  renderProductsList();
+}
+
+function saveLocalProducts(){
+  localStorage.setItem('miranix_products', JSON.stringify(PRODUCTS));
+}
+
+document.getElementById('loginBtn').addEventListener('click', async ()=>{
+  const pass = document.getElementById('adminPass').value;
+  await loadInit();
+  const adminPass = CONFIG?.admin_password || 'miranix123';
+  if(pass === adminPass){
+    document.getElementById('loginArea').style.display='none';
+    document.getElementById('adminArea').style.display='block';
+    renderProductsList();
+  } else alert('رمز اشتباه است');
+});
+
+document.getElementById('addProduct').addEventListener('click', ()=>{
+  const title = document.getElementById('pTitle').value.trim();
+  const price = parseInt(document.getElementById('pPrice').value) || 0;
+  const slug = document.getElementById('pSlug').value.trim() || ('p' + Date.now());
+  const stock = parseInt(document.getElementById('pStock').value) || 0;
+  const image = document.getElementById('pImage').value.trim() || 'assets/placeholder.png';
+  const short = document.getElementById('pShort').value.trim();
+  const editId = document.getElementById('addProduct').dataset.editId;
+  if(editId){
+    const idx = PRODUCTS.findIndex(x=>x.id==editId);
+    if(idx>=0){
+      PRODUCTS[idx] = {...PRODUCTS[idx], title, price, slug, stock, image, short};
+    }
+    delete document.getElementById('addProduct').dataset.editId;
+  } else {
+    const id = Date.now();
+    PRODUCTS.push({id, title, price, slug, stock, image, short});
+  }
+  saveLocalProducts();
+  renderProductsList();
+  alert('ذخیره شد. تغییرات در localStorage نگهداری شد. برای ذخیره دائمی، فایل JSON را دانلود و جایگزین products.json در هاست کن.');
+});
+
+document.getElementById('saveConfig').addEventListener('click', async ()=>{
+  // only localStorage for config
+  const storeName = document.getElementById('storeName').value;
+  const redirect = document.getElementById('redirectTemplate').value;
+  const newCfg = {store_name: storeName, admin_password: CONFIG?.admin_password || 'miranix123', payment:{type:'redirect', redirect_url_template: redirect}};
+  localStorage.setItem('miranix_config', JSON.stringify(newCfg));
+  alert('تنظیمات در localStorage ذخیره شد. برای اعمال دائمی، ویرایش فایل config.json روی هاست انجام بده.');
+});
+
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(PRODUCTS, null, 2));
+  const dl = document.createElement('a');
+  dl.setAttribute('href', dataStr);
+  dl.setAttribute('download', 'products_export.json');
+  document.body.appendChild(dl);
+  dl.click();
+  dl.remove();
+});
+
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  document.getElementById('fileInput').click();
+});
+document.getElementById('fileInput').addEventListener('change', (e)=>{
+  const f = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      const data = JSON.parse(ev.target.result);
+      PRODUCTS = data;
+      saveLocalProducts();
+      renderProductsList();
+      alert('بارگذاری انجام شد');
+    }catch(err){ alert('فایل معتبر نیست'); }
+  }
+  reader.readAsText(f);
+});
+
+// init: try load local config if present
+(async ()=>{ try{ const lc = JSON.parse(localStorage.getItem('miranix_config')||'null'); if(lc) CONFIG = lc; else CONFIG = await fetch(cfgUrl).then(r=>r.json()); }catch(e){ CONFIG = {store_name:'Miranix Shop', admin_password:'miranix123', payment:{redirect_url_template:''}} } })();
+</script>
+</body></html>

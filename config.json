@@ -1,0 +1,8 @@
+{
+  "store_name": "Miranix Shop",
+  "admin_password": "miranix123",
+  "payment": {
+    "type": "redirect",
+    "redirect_url_template": "https://example-payment-gateway/checkout?amount={amount}&order_id={order_id}"
+  }
+}

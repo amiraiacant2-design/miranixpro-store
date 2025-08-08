@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "title": "پکیج پریست ادیت حرفه‌ای 1",
+    "slug": "preset-pack-1",
+    "price": 120000,
+    "currency": "IRR",
+    "short": "پریست و ترانزیشن‌های لوکس برای ویدیو",
+    "image": "assets/product1.jpg",
+    "stock": 50,
+    "rating": 4.8
+  },
+  {
+    "id": 2,
+    "title": "خدمات ادیت اختصاصی - ویدیو تا 3 دقیقه",
+    "slug": "custom-edit-3min",
+    "price": 350000,
+    "currency": "IRR",
+    "short": "ادیت اختصاصی با زمان تحویل 3 روز کاری",
+    "image": "assets/product2.jpg",
+    "stock": 20,
+    "rating": 4.9
+  }
+]
