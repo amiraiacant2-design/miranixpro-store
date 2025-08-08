@@ -1,1 +1,298 @@
 
+-- -----------------------------------------
+-- فروشگاه آنلاین حرفه‌ای با پشتیبانی چند فروشنده و چندزبانه
+-- PostgreSQL Schema کامل، آماده اجرا و توسعه
+-- تاریخ: 2025-08-08
+-- -----------------------------------------
+
+-- تنظیم زبان پیش‌فرض و تنظیمات عمومی
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SET check_function_bodies = false;
+SET client_min_messages = warning;
+
+-- -----------------------------------------
+-- جداول پایه: زبان‌ها
+-- -----------------------------------------
+CREATE TABLE languages (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(5) NOT NULL UNIQUE, -- مثل 'fa' یا 'en'
+    name VARCHAR(50) NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+-- نمونه زبان‌ها
+INSERT INTO languages (code, name, is_default) VALUES
+('fa', 'فارسی', TRUE),
+('en', 'English', FALSE);
+
+-- -----------------------------------------
+-- کاربران (شامل مشتریان و فروشندگان و ادمین)
+-- -----------------------------------------
+CREATE TYPE user_role AS ENUM ('admin', 'vendor', 'customer');
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role user_role NOT NULL DEFAULT 'customer',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -----------------------------------------
+-- اطلاعات فروشنده (هر فروشنده یک رکورد در این جدول)
+-- فقط برای role = 'vendor'
+-- -----------------------------------------
+CREATE TABLE vendors (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    store_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -----------------------------------------
+-- دسته‌بندی محصولات (درختی)
+-- -----------------------------------------
+CREATE TABLE categories (
+    id SERIAL PRIMARY KEY,
+    parent_id INT REFERENCES categories(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- دسته‌بندی ترجمه شده (برای چندزبانه بودن)
+CREATE TABLE category_translations (
+    id SERIAL PRIMARY KEY,
+    category_id INT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    language_id INT NOT NULL REFERENCES languages(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    description TEXT,
+    UNIQUE (category_id, language_id)
+);
+
+-- -----------------------------------------
+-- برندها
+-- -----------------------------------------
+CREATE TABLE brands (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE brand_translations (
+    id SERIAL PRIMARY KEY,
+    brand_id INT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+    language_id INT NOT NULL REFERENCES languages(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    description TEXT,
+    UNIQUE (brand_id, language_id)
+);
+
+-- -----------------------------------------
+-- محصولات اصلی
+-- -----------------------------------------
+CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    vendor_id INT NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+    brand_id INT REFERENCES brands(id) ON DELETE SET NULL,
+    category_id INT REFERENCES categories(id) ON DELETE SET NULL,
+    sku VARCHAR(50) UNIQUE, -- کد محصول یکتا
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    discount_price NUMERIC(12,2) CHECK (discount_price >= 0),
+    stock INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ترجمه محصولات (نام، توضیحات و مشخصات)
+CREATE TABLE product_translations (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    language_id INT NOT NULL REFERENCES languages(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    specifications JSONB, -- جداول مشخصات فنی بصورت JSON
+    UNIQUE (product_id, language_id)
+);
+
+-- -----------------------------------------
+-- تصاویر محصولات
+-- -----------------------------------------
+CREATE TABLE product_images (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    alt_text VARCHAR(255),
+    sort_order INT NOT NULL DEFAULT 0
+);
+
+-- -----------------------------------------
+-- ویژگی‌ها و مقادیر ویژگی‌ها (Attributes & Attribute Values)
+-- -----------------------------------------
+CREATE TABLE attributes (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE attribute_translations (
+    id SERIAL PRIMARY KEY,
+    attribute_id INT NOT NULL REFERENCES attributes(id) ON DELETE CASCADE,
+    language_id INT NOT NULL REFERENCES languages(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    UNIQUE (attribute_id, language_id)
+);
+
+CREATE TABLE attribute_values (
+    id SERIAL PRIMARY KEY,
+    attribute_id INT NOT NULL REFERENCES attributes(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE attribute_value_translations (
+    id SERIAL PRIMARY KEY,
+    attribute_value_id INT NOT NULL REFERENCES attribute_values(id) ON DELETE CASCADE,
+    language_id INT NOT NULL REFERENCES languages(id) ON DELETE CASCADE,
+    value VARCHAR(150) NOT NULL,
+    UNIQUE (attribute_value_id, language_id)
+);
+
+-- -----------------------------------------
+-- ترکیب‌های محصول (Product Variants)
+-- هر ترکیب مربوط به یک محصول است و ویژگی‌های متفاوت دارد
+-- -----------------------------------------
+CREATE TABLE product_variants (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    sku VARCHAR(100) UNIQUE,
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    discount_price NUMERIC(12,2) CHECK (discount_price >= 0),
+    stock INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- رابطه بین ترکیب و مقدار ویژگی‌ها
+CREATE TABLE product_variant_attributes (
+    id SERIAL PRIMARY KEY,
+    product_variant_id INT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+    attribute_id INT NOT NULL REFERENCES attributes(id),
+    attribute_value_id INT NOT NULL REFERENCES attribute_values(id),
+    UNIQUE (product_variant_id, attribute_id)
+);
+
+-- -----------------------------------------
+-- نظرات و امتیازها
+-- -----------------------------------------
+CREATE TABLE product_reviews (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+    rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_approved BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+-- -----------------------------------------
+-- سفارشات
+-- -----------------------------------------
+CREATE TYPE order_status AS ENUM ('pending', 'processing', 'shipped', 'delivered', 'cancelled');
+
+CREATE TABLE orders (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id),
+    vendor_id INT REFERENCES vendors(id), -- برای مارکت‌پلیس: سفارش می‌تواند مربوط به یک فروشنده باشد
+    total_amount NUMERIC(14,2) NOT NULL CHECK (total_amount >= 0),
+    payment_status BOOLEAN NOT NULL DEFAULT FALSE,
+    status order_status NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- آیتم‌های سفارش
+CREATE TABLE order_items (
+    id SERIAL PRIMARY KEY,
+    order_id INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_variant_id INT NOT NULL REFERENCES product_variants(id),
+    quantity INT NOT NULL CHECK (quantity > 0),
+    unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
+    total_price NUMERIC(14,2) NOT NULL CHECK (total_price >= 0)
+);
+
+-- -----------------------------------------
+-- صفحات داینامیک و محتوای چندزبانه
+-- -----------------------------------------
+CREATE TABLE pages (
+    id SERIAL PRIMARY KEY,
+    slug VARCHAR(150) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE page_translations (
+    id SERIAL PRIMARY KEY,
+    page_id INT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    language_id INT NOT NULL REFERENCES languages(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    content TEXT,
+    UNIQUE (page_id, language_id)
+);
+
+-- -----------------------------------------
+-- کدهای تخفیف
+-- -----------------------------------------
+CREATE TABLE coupons (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    description TEXT,
+    discount_type VARCHAR(20) NOT NULL, -- 'percent' یا 'fixed'
+    discount_value NUMERIC(10,2) NOT NULL CHECK (discount_value >= 0),
+    usage_limit INT DEFAULT NULL,
+    usage_count INT DEFAULT 0,
+    valid_from TIMESTAMP WITH TIME ZONE,
+    valid_until TIMESTAMP WITH TIME ZONE,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- -----------------------------------------
+-- استفاده از کوپن‌ها در سفارشات
+-- -----------------------------------------
+CREATE TABLE order_coupons (
+    id SERIAL PRIMARY KEY,
+    order_id INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    coupon_id INT NOT NULL REFERENCES coupons(id) ON DELETE CASCADE
+);
+
+-- -----------------------------------------
+-- نوتیفیکیشن‌ها (مثلاً ایمیل یا پیام داخلی)
+-- -----------------------------------------
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -----------------------------------------
+-- ایندکس‌ها برای بهینه‌سازی جستجو و سرعت
+-- -----------------------------------------
+CREATE INDEX idx_products_category ON products(category_id);
+CREATE INDEX idx_products_brand ON products(brand_id);
+CREATE INDEX idx_products_vendor ON products(vendor_id);
+CREATE INDEX idx_orders_user ON orders(user_id);
+CREATE INDEX idx_orders_vendor ON orders(vendor_id);
+CREATE INDEX idx_product_reviews_product ON product_reviews(product_id);
+CREATE INDEX idx_product_reviews_user ON product_reviews(user_id);
+
+-- -----------------------------------------
+-- پایان فایل SQL Schema
+-- -----------------------------------------
